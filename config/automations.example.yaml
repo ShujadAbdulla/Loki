@@ -1,0 +1,14 @@
+# Copy entries into %LOCALAPPDATA%\PersonalAgent\config.yaml under automations:
+
+automations:
+  - on: file_created
+    path: C:/Users/You/Documents/Reports
+    filter: "*.pdf"
+    then:
+      - index_document
+      - run_task: "Summarize the new PDF and save a short summary to Desktop/summary.txt"
+
+  - on: schedule
+    cron: "0 9 * * 1"   # Every Monday 9:00
+    then:
+      - run_task: "Search the web for AI industry news this week and list top 5 headlines"

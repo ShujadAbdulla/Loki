@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Loki</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Loki</h1>
+      <span id="status" class="status">Connecting…</span>
+    </header>
+    <main class="layout">
+      <section class="chat-panel">
+        <div id="messages" class="messages"></div>
+        <form id="chat-form" class="chat-form">
+          <textarea id="input" rows="2" placeholder="Ask Loki anything or give a task…"></textarea>
+          <button type="submit" id="send-btn">Send</button>
+        </form>
+      </section>
+      <aside class="sidebar">
+        <section>
+          <h2>Settings</h2>
+          <label class="checkbox">
+            <input type="checkbox" id="web-search-toggle" />
+            Web search (Tavily)
+          </label>
+          <div class="field">
+            <label>Watched folder</label>
+            <input type="text" id="folder-path" placeholder="C:\Users\NXTWAVE\Desktop\testbyloki" />
+            <button type="button" id="add-folder-btn">Add folder</button>
+            <p id="watched-hint" class="hint"></p>
+          </div>
+          <button type="button" id="reindex-btn">Re-index documents</button>
+        </section>
+        <section>
+          <h2>Pending approvals</h2>
+          <ul id="approvals-list"></ul>
+        </section>
+        <section>
+          <h2>Recent tasks</h2>
+          <ul id="tasks-list"></ul>
+        </section>
+      </aside>
+    </main>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

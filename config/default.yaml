@@ -1,0 +1,49 @@
+server:
+  host: "127.0.0.1"
+  port: 8787
+
+agent:
+  model: "llama-3.3-70b-versatile"
+  temperature: 0.3
+
+web_search:
+  enabled: true
+  max_results: 5
+
+rag:
+  chunk_size: 800
+  chunk_overlap: 120
+  top_k: 5
+
+security:
+  require_approval_for:
+    - delete_file
+    - delete_folder
+    - write_file
+    - create_folder
+    - move_file
+    - send_email
+    - send_message
+    - run_shell
+
+watched_paths: []
+
+allowed_senders: []
+
+network_allowlist:
+  - api.groq.com
+  - api.tavily.com
+  - api.telegram.org
+
+email:
+  enabled: false
+  imap_host: ""
+  imap_port: 993
+  smtp_host: ""
+  smtp_port: 587
+  command_folder: "AgentCommands"
+
+telegram:
+  enabled: false
+
+automations: []
