@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import re
+import threading
 from pathlib import Path
 from typing import Any
 
-from langchain_groq import ChatGroq
 from langgraph.prebuilt import create_react_agent
 
+from backend.agent.model_router import ModelRouter
 from backend.agent.router import (
     Route,
     build_routing_context,
@@ -34,7 +35,6 @@ _WEB_CITE_RE = re.compile(r"\s*\[web:\s*([^\]]+)\]\s*", re.I)
 
 
 def _clean_reply_citations(reply: str) -> str:
-    """Collapse repeated [local: ...] / [web: ...] tags into one Source line."""
     if not reply:
         return reply
     local_paths: list[str] = []
@@ -74,33 +74,19 @@ SYSTEM_PROMPT = f"""{LOKI_PERSONA}
 
 You can:
 - Search and read the user's local indexed documents (search_local_documents, read_file)
+- Process media files (process_media) — images, audio, video, PDFs, office docs
+- Generate documents (generate_docx, generate_pptx, generate_pdf, generate_xlsx)
 - Search the web for current public information (web_search) when enabled
 - Read, write, move, and delete files ONLY inside user-approved watched folders
-- create_folder — create a new directory inside a watched folder (not for adding new watched roots)
-- delete_file — delete a file OR a folder (folders are removed with everything inside)
-- delete_folder — same as deleting a directory (alternative tool name)
-- list_directory — list live files/folders on disk (use for "list files" / "what is inside"; includes videos, pdf names)
-- search_local_documents — search text inside indexed txt/pdf/docx only (not videos)
-- write_file — write a file (also creates missing parent folders for the file path)
+- create_folder, delete_file, delete_folder, move_file, list_directory
 
 Rules:
-- To create a new folder, use create_folder (not write_file).
-- Paths must be inside folders the user added in Settings (watched folders). You cannot create folders outside those roots.
-- NEVER use placeholder paths like /path/to/your/folder or /watched/folder/path/. Always use the exact Windows paths listed under WATCHED FOLDERS below.
-- If the user says "list files" or "what is in my folder", use list_directory with path="" — NOT search_local_documents or read_file on every file.
-- Never read_file on .mp4, .mp3, images, or .exe — tell the user those are media/binary files.
-- For questions about a handbook or document, use search_local_documents first, then read_file only on .pdf/.txt/.docx paths found.
-- To delete a folder or file, use delete_file or delete_folder (both remove folders recursively).
-- Prefer search_local_documents before read_file when answering questions about user files.
-- Use web_search for recent events, news, prices, or when the user asks to search online.
-- Destructive file operations return APPROVAL_REQUIRED:<id> — tell the user the exact approval id and to click Approve in the sidebar, then STOP (do not call delete again until they approve).
-- For delete, use the full path under WATCHED FOLDERS (e.g. C:\\...\\testbyloki\\newfolder) or just the folder name like newfolder (resolved automatically).
-- After the user approves, the file is written automatically; do not retry write_file unless the user asks again.
-- When using local or web context, write a clear answer without inline path citations.
-- If a source matters, end with one line only, e.g. "Source: Student_Handbook.pdf" or "Source: https://..." — never repeat paths after every sentence.
+- For .mp4, .mp3, .png, .jpg, images, audio, video — use process_media, NOT read_file.
+- For generating Word/PowerPoint/PDF/Excel files, use the generate_* tools.
+- Paths must be inside watched folders listed below.
+- Destructive ops return APPROVAL_REQUIRED:<id> — tell user to approve in UI.
 - Be concise and actionable.
-- For greetings (hi, hello): reply briefly as Loki (e.g. introduce yourself as Loki). Do NOT call list_directory or any tool.
-- Only use tools when the user asks for a task (files, folders, search, write, etc.).
+- For greetings: reply briefly as Loki without tools.
 """
 
 
@@ -113,6 +99,7 @@ class AgentOrchestrator:
         audit: AuditLog,
         store: VectorStore,
         file_tools: FileTools | None = None,
+        model_router: ModelRouter | None = None,
     ) -> None:
         self._config = config
         self._allowlist = allowlist
@@ -120,31 +107,25 @@ class AgentOrchestrator:
         self._audit = audit
         self._store = store
         self._file_tools = file_tools
+        self._model_router = model_router or ModelRouter(config, audit)
         self._rag = RagSearchTool(store, config, audit)
         self._web = WebSearchTool(config, audit)
         self._graph = None
-        self._graph_paths_key: tuple[str, ...] = ()
+        self._graph_paths_key: tuple[str, ...] | tuple[str, bool] = ()
 
     def _watched_paths_block(self) -> str:
         roots = self._allowlist.roots
         if not roots:
-            return "\n\nWATCHED FOLDERS: (none — tell user to add a folder in Settings sidebar)\n"
+            return "\n\nWATCHED FOLDERS: (none — tell user to add a folder in Settings)\n"
         lines = "\n".join(f"  - {r}" for r in roots)
         return f"\n\nWATCHED FOLDERS (use these exact paths in tools):\n{lines}\n"
 
-    def _build_graph(self):
-        paths_key = tuple(str(r) for r in self._allowlist.roots)
+    def _build_graph(self, force_offline: bool = False):
+        paths_key = (tuple(str(r) for r in self._allowlist.roots), force_offline)
         if self._graph is not None and self._graph_paths_key == paths_key:
             return self._graph
         self._graph_paths_key = paths_key
-        key = self._config.groq_api_key
-        if not key:
-            raise RuntimeError("GROQ_API_KEY is not set. Add it to .env")
-        llm = ChatGroq(
-            model=self._config.agent.model,
-            api_key=key,
-            temperature=self._config.agent.temperature,
-        )
+        llm = self._model_router.get_llm(force_offline=force_offline)
         tools = build_tools(
             self._config,
             self._allowlist,
@@ -152,28 +133,21 @@ class AgentOrchestrator:
             self._audit,
             self._store,
             fs=self._file_tools,
+            llm=llm,
         )
         prompt = SYSTEM_PROMPT + self._watched_paths_block()
         self._graph = create_react_agent(llm, tools, prompt=prompt)
         return self._graph
 
     def _simple_chat(self, message: str, history: list[dict[str, str]] | None) -> str:
-        """Fast path for greetings — no tools."""
         from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-        llm = ChatGroq(
-            model=self._config.agent.model,
-            api_key=self._config.groq_api_key,
-            temperature=self._config.agent.temperature,
-        )
+        llm = self._model_router.get_llm()
         roots = self._allowlist.roots
         folder_hint = f" Watching folder: {roots[0]}." if roots else ""
         system = (
-            "You are Loki — witty, mischievous, charming (Norse god / Marvel-inspired). "
-            "You help on the user's Windows PC."
-            f"{folder_hint} "
-            "On greetings, introduce yourself as Loki in 1-2 sentences with personality. "
-            "Do not list files or use tools unless the user asks for a task."
+            "You are Loki — witty, mischievous, charming. You help on the user's Windows PC."
+            f"{folder_hint} On greetings, introduce yourself briefly. No tools unless asked."
         )
         messages: list = [SystemMessage(content=system)]
         if history:
@@ -189,23 +163,23 @@ class AgentOrchestrator:
         out = llm.invoke(messages)
         return out.content if isinstance(out.content, str) else str(out.content)
 
+    def _pending(self) -> list[dict[str, Any]]:
+        return [
+            {"id": a.id, "tool": a.tool_name, "args": a.args}
+            for a in self._approvals.list_pending()
+        ]
+
     def chat(self, message: str, history: list[dict[str, str]] | None = None) -> dict[str, Any]:
         route = route_query(message, self._config)
+        mode = self._model_router.get_status()
 
         if not needs_agent_tools(message, route):
             reply = self._simple_chat(message, history)
-            return {
-                "reply": reply,
-                "route": "casual",
-                "pending_approvals": [
-                    {"id": a.id, "tool": a.tool_name, "args": a.args}
-                    for a in self._approvals.list_pending()
-                ],
-            }
+            return {"reply": reply, "route": "casual", "mode": mode, "pending_approvals": self._pending()}
 
         local_ctx = ""
         web_ctx = ""
-        if route in (Route.LOCAL, Route.BOTH) and not prefers_live_directory_listing(message):
+        if route in (Route.LOCAL, Route.BOTH, Route.MEDIA) and not prefers_live_directory_listing(message):
             local_ctx = self._rag.search(message)
         if route in (Route.WEB, Route.BOTH) and self._web.available:
             web_ctx = self._web.search(message)
@@ -226,13 +200,22 @@ class AgentOrchestrator:
                     messages.append({"role": role, "content": content})
         messages.append({"role": "user", "content": full_message})
 
-        self._audit.log("chat", {"message": message[:200], "route": route.value})
-        result = graph.invoke({"messages": messages})
+        self._audit.log("chat", {"message": message[:200], "route": route.value}, category="AI_ACTION")
+        try:
+            result = graph.invoke({"messages": messages})
+        except Exception as e:
+            if self._model_router.preference == "auto" and self._config.groq_api_key:
+                self._model_router.mark_fallback()
+                self._graph = None
+                threading.Thread(target=self._model_router.ensure_ollama_running, daemon=True).start()
+                graph = self._build_graph(force_offline=True)
+                result = graph.invoke({"messages": messages})
+            else:
+                raise RuntimeError(f"AI request failed: {e}") from e
         out_messages = result.get("messages", [])
         reply = ""
         try:
             from langchain_core.messages import AIMessage
-
             for m in reversed(out_messages):
                 if isinstance(m, AIMessage) and m.content:
                     reply = m.content if isinstance(m.content, str) else str(m.content)
@@ -253,8 +236,6 @@ class AgentOrchestrator:
         return {
             "reply": reply,
             "route": route.value,
-            "pending_approvals": [
-                {"id": a.id, "tool": a.tool_name, "args": a.args}
-                for a in self._approvals.list_pending()
-            ],
+            "mode": self._model_router.get_status(),
+            "pending_approvals": self._pending(),
         }

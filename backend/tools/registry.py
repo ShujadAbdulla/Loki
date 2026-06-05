@@ -13,6 +13,8 @@ from backend.security.approvals import ApprovalQueue
 from backend.security.audit import AuditLog
 from backend.rag.store import VectorStore
 from backend.tools.fs_tools import FileTools
+from backend.tools.gen_tool import GenTools
+from backend.tools.media_tool import MediaTool
 from backend.tools.rag_search import RagSearchTool
 from backend.tools.web_search import WebSearchTool
 
@@ -65,6 +67,14 @@ class SearchQueryInput(BaseModel):
     query: str = Field(description="Search query")
 
 
+class ProcessMediaInput(BaseModel):
+    path: str = Field(description="Path to media file (image, audio, video, pdf, office doc)")
+
+
+class GenerateInput(BaseModel):
+    prompt: str = Field(description="Description of document to generate")
+
+
 def build_tools(
     config: AppConfig,
     allowlist: PathAllowlist,
@@ -72,6 +82,7 @@ def build_tools(
     audit: AuditLog,
     store: VectorStore,
     fs: FileTools | None = None,
+    llm=None,
 ) -> list[StructuredTool]:
     if fs is None:
         fs = FileTools(
@@ -82,11 +93,22 @@ def build_tools(
         )
     web = WebSearchTool(config, audit)
     rag = RagSearchTool(store, config, audit)
+    media = MediaTool(config, audit, store, allowlist)
+    gen = GenTools(config, audit, llm) if llm else None
 
     tools: list[StructuredTool] = [
         StructuredTool.from_function(
+            name="process_media",
+            description=(
+                "Process images, audio, video, PDFs, and office files using hybrid pipeline. "
+                "Use for .mp4, .mp3, .png, .jpg, scanned PDFs, .pptx, .xlsx."
+            ),
+            func=media.process_media,
+            args_schema=ProcessMediaInput,
+        ),
+        StructuredTool.from_function(
             name="read_file",
-            description="Read text from txt, md, pdf, docx, json, etc. Do NOT use on video/audio (.mp4, .mp3) or images.",
+            description="Read text from txt, md, pdf, docx, json, etc. For media files use process_media instead.",
             func=fs.read_file,
             args_schema=ReadFileInput,
         ),
@@ -153,5 +175,16 @@ def build_tools(
                 args_schema=SearchQueryInput,
             )
         )
+
+    if gen:
+        for name, desc, fn in [
+            ("generate_docx", "Generate a Word document (.docx) from a prompt.", gen.generate_docx),
+            ("generate_pptx", "Generate a PowerPoint (.pptx) from a prompt.", gen.generate_pptx),
+            ("generate_pdf", "Generate a PDF document from a prompt.", gen.generate_pdf),
+            ("generate_xlsx", "Generate an Excel spreadsheet (.xlsx) from a prompt.", gen.generate_xlsx),
+        ]:
+            tools.append(StructuredTool.from_function(
+                name=name, description=desc, func=fn, args_schema=GenerateInput,
+            ))
 
     return tools

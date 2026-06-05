@@ -1,22 +1,27 @@
-# Loki
+# Loki v2
 
-A Windows desktop personal assistant named **Loki** (mischievous, clever — your local agent) that runs on your machine. It indexes your documents (RAG), searches the web (Tavily), performs file operations in approved folders, and accepts remote commands via email or Telegram.
+A Windows desktop personal AI assistant that runs locally on your machine. Indexes documents (RAG), processes media, generates files, integrates with Gmail/Outlook, and accepts remote commands via email or Telegram.
 
-## Features
+## Features (v2)
 
-- **Chat UI** — browser-based panel at `http://127.0.0.1:8787/ui/`
-- **Local RAG** — watches folders, indexes PDF/DOCX/TXT/MD, answers with `[local: path]` citations
-- **Web search** — Tavily integration with `[web: url]` citations
-- **File tools** — read, write, move, delete (with approval for destructive ops)
-- **Remote control** — `TASK:`, `APPROVE:`, `REJECT:` via email or Telegram
-- **Automations** — YAML workflows in `config/default.yaml`
+- **Professional UI** — dark sidebar, dashboard, chat, emails, downloads, settings
+- **Hybrid media pipeline** — MarkItDown → vision fallback (Moondream) + Whisper for audio
+- **Online/offline LLM** — Groq primary, Phi-3 Mini via Ollama fallback (automatic)
+- **File generation** — DOCX, PDF, PPTX, XLSX
+- **Gmail & Outlook OAuth2** — read/send email (tokens in OS keychain)
+- **WhatsApp Web** — read-only Phase 1 via Selenium
+- **Activity Log** — live SSE stream, filters, undo (30s window)
+- **Download Center** — all generated files in one place
+- **Morning briefing** — catch-up summary on startup
+- **PyWebView native window** + system tray support
+- **Windows installer** — PyInstaller + NSIS scripts included
 
 ## Quick start
 
 ### 1. Install dependencies
 
 ```powershell
-cd C:\Users\NXTWAVE\Desktop\agent
+cd C:\Users\munna\OneDrive\Desktop\agent
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
@@ -26,79 +31,67 @@ pip install -r requirements.txt
 
 Copy `.env.example` to `.env` and set:
 
-```env
+```
 GROQ_API_KEY=your_key
-TAVILY_API_KEY=your_key   # optional, for web search
+TAVILY_API_KEY=your_key          # optional
+GOOGLE_CLIENT_ID=...             # optional, for Gmail
+GOOGLE_CLIENT_SECRET=...
+MICROSOFT_CLIENT_ID=...          # optional, for Outlook
 ```
 
-### 3. Run
+### 3. Install Ollama (for offline fallback)
+
+```powershell
+# Download from https://ollama.com
+ollama pull phi3:mini
+ollama pull moondream
+```
+
+### 4. Run
 
 ```powershell
 python run_agent.py
 ```
 
-Opens the chat UI in your browser. The API only binds to `127.0.0.1`.
+Opens native window (PyWebView) or browser fallback at `http://127.0.0.1:8787/ui/`
 
-### 4. Add a watched folder
-
-In the UI sidebar, enter a path like `C:\Users\You\Documents` and click **Add folder**. Click **Re-index documents** to index existing files.
-
-## Remote commands
-
-### Telegram
-
-1. Create a bot via [@BotFather](https://t.me/BotFather)
-2. Set in `.env`:
-
-```env
-TELEGRAM_BOT_TOKEN=...
-TELEGRAM_ALLOWED_CHAT_IDS=123456789
+**System tray:**
+```powershell
+python run_tray.py
 ```
-
-3. Enable in user config (`%LOCALAPPDATA%\PersonalAgent\config.yaml`):
-
-```yaml
-telegram:
-  enabled: true
-```
-
-4. Message your bot:
-
-```
-TASK: Summarize my latest report and save summary to Desktop
-APPROVE: abc12345
-```
-
-### Email
-
-Set `EMAIL_ADDRESS`, `EMAIL_PASSWORD`, `IMAP_HOST`, `SMTP_HOST` in `.env` and add allowed senders in settings.
 
 ## Project layout
 
 ```
 agent/
-├── backend/          # FastAPI + LangGraph agent
-├── desktop/ui/       # Chat web UI
-├── config/           # Default YAML config
-├── run_agent.py      # Launcher
-└── app.py            # Legacy career copilot (optional)
+├── backend/
+│   ├── agent/          # Orchestrator, router, model_router
+│   ├── media/          # Hybrid media pipeline
+│   ├── generators/     # DOCX/PDF/PPTX/XLSX
+│   ├── communication/  # Gmail, Outlook, WhatsApp
+│   ├── automations/    # YAML workflows + startup briefing
+│   ├── rag/            # ChromaDB indexing
+│   ├── security/       # Audit, approvals, undo
+│   └── tools/          # LangChain tools
+├── desktop/ui/         # Professional web UI + components
+├── config/             # default.yaml
+├── run_agent.py        # PyWebView launcher
+├── run_tray.py         # System tray
+├── build.py            # PyInstaller build
+└── installer.nsi       # NSIS installer script
 ```
 
 ## Security
 
-- API listens on **localhost only**
-- File access limited to **watched folders** you approve
-- Write/delete/move require **approval** in the UI
+- API listens on **127.0.0.1 only**
+- File access limited to **watched folders**
+- Write/delete/move require **approval** in UI
+- OAuth tokens stored in **OS keychain** (never plaintext)
 - Actions logged to `%LOCALAPPDATA%\PersonalAgent\audit.jsonl`
 
-## Legacy career copilot
-
-The original Gradio app is still at `app.py`:
+## Build installer
 
 ```powershell
-python app.py
+python build.py
+# Then compile installer.nsi with NSIS
 ```
-
-## Tauri native app (future)
-
-The `desktop/` folder currently ships a web UI served by FastAPI. A Tauri wrapper can be added later for a system-tray installable `.msi`.

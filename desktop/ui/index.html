@@ -7,45 +7,63 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <div class="app">
-    <header>
-      <h1>Loki</h1>
-      <span id="status" class="status">Connecting…</span>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <span class="logo-icon">&#9889;</span>
+        <span class="logo-text">Loki</span>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="#" data-page="chat" class="nav-item active">Chat</a>
+        <a href="#" data-page="dashboard" class="nav-item">Dashboard</a>
+        <a href="#" data-page="files" class="nav-item">Files</a>
+        <a href="#" data-page="emails" class="nav-item">Emails</a>
+        <a href="#" data-page="downloads" class="nav-item">Generated Docs</a>
+        <a href="#" data-page="settings" class="nav-item">Settings</a>
+      </nav>
+      <div class="sidebar-connections">
+        <div id="gmail-badge" class="connection-badge">Gmail</div>
+        <div id="outlook-badge" class="connection-badge">Outlook</div>
+        <div id="wa-badge" class="connection-badge">WhatsApp</div>
+      </div>
+      <div class="sidebar-status">
+        <span id="loki-status" class="status-dot"></span>
+        <span id="mode-label">Online</span>
+      </div>
+    </aside>
+
+    <header class="topbar">
+      <h1 id="page-title" class="page-title">Chat</h1>
+      <input type="search" class="global-search" placeholder="Search everything..." id="global-search" />
     </header>
-    <main class="layout">
-      <section class="chat-panel">
-        <div id="messages" class="messages"></div>
-        <form id="chat-form" class="chat-form">
-          <textarea id="input" rows="2" placeholder="Ask Loki anything or give a task…"></textarea>
-          <button type="submit" id="send-btn">Send</button>
-        </form>
-      </section>
-      <aside class="sidebar">
-        <section>
-          <h2>Settings</h2>
-          <label class="checkbox">
-            <input type="checkbox" id="web-search-toggle" />
-            Web search (Tavily)
-          </label>
-          <div class="field">
-            <label>Watched folder</label>
-            <input type="text" id="folder-path" placeholder="C:\Users\NXTWAVE\Desktop\testbyloki" />
-            <button type="button" id="add-folder-btn">Add folder</button>
-            <p id="watched-hint" class="hint"></p>
-          </div>
-          <button type="button" id="reindex-btn">Re-index documents</button>
-        </section>
-        <section>
-          <h2>Pending approvals</h2>
-          <ul id="approvals-list"></ul>
-        </section>
-        <section>
-          <h2>Recent tasks</h2>
-          <ul id="tasks-list"></ul>
-        </section>
-      </aside>
+
+    <div id="offline-banner" class="offline-banner" style="display:none">
+      Running in Offline Mode — using local AI (responses may be slower)
+    </div>
+
+    <button class="log-fab" id="log-fab-btn">Activity Log <span class="badge" id="log-badge" style="display:none">0</span></button>
+
+    <main class="main-content" id="main-content">
+      <div id="page-chat" class="page active"></div>
+      <div id="page-dashboard" class="page"></div>
+      <div id="page-files" class="page"></div>
+      <div id="page-emails" class="page"></div>
+      <div id="page-downloads" class="page"></div>
+      <div id="page-settings" class="page"></div>
     </main>
+
+    <div id="log-panel" class="log-panel"></div>
+    <div id="log-overlay" class="log-overlay" style="display:none"></div>
   </div>
+
+  <script src="components/sidebar.js"></script>
+  <script src="components/chat.js"></script>
+  <script src="components/log_panel.js"></script>
+  <script src="components/download_center.js"></script>
+  <script src="components/email_panel.js"></script>
+  <script src="components/settings.js"></script>
+  <script src="components/dashboard.js"></script>
+  <script src="components/files.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -4,7 +4,10 @@ server:
 
 agent:
   model: "llama-3.3-70b-versatile"
+  local_model: "phi3:mini"
+  vision_model: "moondream"
   temperature: 0.3
+  llm_mode: "auto"
 
 web_search:
   enabled: true
@@ -14,6 +17,17 @@ rag:
   chunk_size: 800
   chunk_overlap: 120
   top_k: 5
+  email_index_limit: 500
+
+media:
+  whisper_model: "base"
+  video_frame_interval: 30
+  judge_confidence_threshold: 0.7
+  max_vision_frames: 5
+
+generators:
+  output_folder: ""
+  template_folder: ""
 
 security:
   require_approval_for:
@@ -26,6 +40,11 @@ security:
     - send_message
     - run_shell
 
+startup:
+  catchup_enabled: true
+  start_with_windows: false
+  minimize_to_tray: true
+
 watched_paths: []
 
 allowed_senders: []
@@ -34,6 +53,11 @@ network_allowlist:
   - api.groq.com
   - api.tavily.com
   - api.telegram.org
+  - accounts.google.com
+  - gmail.googleapis.com
+  - login.microsoftonline.com
+  - graph.microsoft.com
+  - localhost
 
 email:
   enabled: false

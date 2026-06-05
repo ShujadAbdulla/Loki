@@ -10,9 +10,9 @@ import yaml
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
-load_dotenv()
-
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(PROJECT_ROOT / ".env")
+
 CONFIG_PATH = PROJECT_ROOT / "config" / "default.yaml"
 USER_CONFIG_PATH = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "PersonalAgent" / "config.yaml"
 
@@ -30,7 +30,10 @@ class ServerConfig(BaseModel):
 
 class AgentConfig(BaseModel):
     model: str = "llama-3.3-70b-versatile"
+    local_model: str = "phi3:mini"
+    vision_model: str = "moondream"
     temperature: float = 0.3
+    llm_mode: str = "auto"  # auto | online | offline
 
 
 class WebSearchConfig(BaseModel):
@@ -42,6 +45,25 @@ class RagConfig(BaseModel):
     chunk_size: int = 800
     chunk_overlap: int = 120
     top_k: int = 5
+    email_index_limit: int = 500
+
+
+class MediaConfig(BaseModel):
+    whisper_model: str = "base"
+    video_frame_interval: int = 30
+    judge_confidence_threshold: float = 0.7
+    max_vision_frames: int = 5
+
+
+class GeneratorsConfig(BaseModel):
+    output_folder: str = ""
+    template_folder: str = ""
+
+
+class StartupConfig(BaseModel):
+    catchup_enabled: bool = True
+    start_with_windows: bool = False
+    minimize_to_tray: bool = True
 
 
 class SecurityConfig(BaseModel):
@@ -66,6 +88,9 @@ class AppConfig(BaseModel):
     agent: AgentConfig = Field(default_factory=AgentConfig)
     web_search: WebSearchConfig = Field(default_factory=WebSearchConfig)
     rag: RagConfig = Field(default_factory=RagConfig)
+    media: MediaConfig = Field(default_factory=MediaConfig)
+    generators: GeneratorsConfig = Field(default_factory=GeneratorsConfig)
+    startup: StartupConfig = Field(default_factory=StartupConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     watched_paths: list[str] = Field(default_factory=list)
     allowed_senders: list[str] = Field(default_factory=list)
@@ -92,6 +117,18 @@ class AppConfig(BaseModel):
         if not raw.strip():
             return []
         return [int(x.strip()) for x in raw.split(",") if x.strip().lstrip("-").isdigit()]
+
+    @property
+    def google_client_id(self) -> str | None:
+        return os.getenv("GOOGLE_CLIENT_ID")
+
+    @property
+    def google_client_secret(self) -> str | None:
+        return os.getenv("GOOGLE_CLIENT_SECRET")
+
+    @property
+    def microsoft_client_id(self) -> str | None:
+        return os.getenv("MICROSOFT_CLIENT_ID")
 
 
 def _merge_dict(base: dict, override: dict) -> dict:
@@ -124,7 +161,13 @@ def load_config() -> AppConfig:
         server["port"] = int(os.getenv("SERVER_PORT"))
     # Local only — never bind to all interfaces from env
     server["host"] = "127.0.0.1"
-    return AppConfig.model_validate(data)
+    cfg = AppConfig.model_validate(data)
+    data_dir = get_data_dir()
+    if not cfg.generators.output_folder:
+        cfg.generators.output_folder = str(data_dir / "generated")
+    if not cfg.generators.template_folder:
+        cfg.generators.template_folder = str(data_dir / "templates")
+    return cfg
 
 
 def save_user_config(cfg: AppConfig) -> None:
